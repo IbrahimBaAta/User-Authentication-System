@@ -6,14 +6,17 @@ this code is only to check code_flexibility
 
 """
 
-
 import csv
-from random import randint
 import hashlib
-import getpass  # Import the getpass module for secure password input
-
+import getpass
+from random import randint
+import re
 
 CSV_FILE = "codeFlexer.csv"
+MIN_MOBILE_DIGITS = 10
+MIN_PASSWORD_LENGTH = 8
+PASSWORD_PATTERN = re.compile(r'^(?=.*[a-zA-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]+$')
+
 
 def read_csv():
     try:
@@ -22,6 +25,7 @@ def read_csv():
     except FileNotFoundError:
         return []
 
+
 def write_csv(rows):
     with open(CSV_FILE, "w", newline="") as db:
         headers = ["UserName", "MobileNo", "Passwrd"]
@@ -29,50 +33,68 @@ def write_csv(rows):
         writer.writeheader()
         writer.writerows(rows)
 
+
 def is_mobile_unique(mobile, rows):
     return all(int(row["MobileNo"]) != mobile for row in rows)
+
 
 def is_user_unique(username, rows):
     return all(row["UserName"] != username for row in rows)
 
+
 def hash_password(password):
-    # Use a secure hash function like SHA-256
     return hashlib.sha256(password.encode()).hexdigest()
+
 
 def create_new_user():
     db_reader = read_csv()
-    
+
     username = input("Name: ")
     if is_user_unique(username, db_reader):
-        while True:
-            try:
-                mobile_no = int(input("Mobile No: "))
-                if len(str(mobile_no)) == 10:
-                    if is_mobile_unique(mobile_no, db_reader):
-                        break
-                    else:
-                        yes_or_no = input(f"The given MobileNo {mobile_no} has been taken already.\nContinue with this number? Y/N: ")
-                        if yes_or_no.upper() == "Y":
-                            break
-                        elif yes_or_no.upper() == "N":
-                            continue
-                        else:
-                            print("Use only Y/N")
-                else:
-                    print("10-digit number needed\nDon't use country code.")
-            except ValueError:
-                print("Invalid input, use numbers.")
+        mobile_no = get_valid_mobile_number(db_reader)
+        password = get_valid_password()
+        hashed_password = hash_password(password)
 
-        while True:
-            password = getpass.getpass("Password: ")  # Use getpass to securely input password
+        db_reader.append({"UserName": username, "MobileNo": mobile_no, "Passwrd": hashed_password})
+        write_csv(db_reader)
+
+        return "Account created"
+    else:
+        return "Account exists"
+
+
+def get_valid_mobile_number(rows):
+    while True:
+        try:
+            mobile_no = int(input("Mobile No: "))
+            if len(str(mobile_no)) == MIN_MOBILE_DIGITS:
+                if is_mobile_unique(mobile_no, rows):
+                    return mobile_no
+                else:
+                    response = input(f"The given MobileNo {mobile_no} has been taken already.\nContinue with this number? Y/N: ")
+                    if response.upper() == "Y":
+                        return mobile_no
+                    elif response.upper() == "N":
+                        continue
+                    else:
+                        print("Use only Y/N")
+            else:
+                print("10-digit number needed\nDon't use country code.")
+        except ValueError:
+            print("Invalid input, use numbers.")
+
+
+def get_valid_password():
+    while True:
+        password = getpass.getpass("Password: ")
+        if len(password) >= MIN_PASSWORD_LENGTH and PASSWORD_PATTERN.match(password):
             confirm_password = getpass.getpass("Confirm Password: ")
             if password == confirm_password:
-                hashed_password = hash_password(password)
-                db_reader.append({"UserName": username, "MobileNo": mobile_no, "Passwrd": hashed_password})
-                write_csv(db_reader)
-                return "Account created"
+                return password
             print("Passwords do not match.")
-    return "Account exists"
+        else:
+            print("Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one digit, and one special character.")
+
 
 def forgot(mobile, reset_password=False):
     db_reader = read_csv()
@@ -82,20 +104,28 @@ def forgot(mobile, reset_password=False):
             if not reset_password:
                 print(f"Authentication ID: {row['UserName']}")
             else:
-                while True:
-                    otp = randint(10000, 99999)
-                    print(otp)
-                    user_otp = input("OTP: ")
-                    if otp == int(user_otp):
-                        new_password = input("New Password: ")
-                        confirm_new_password = input("Confirm New Password: ")
-                        if new_password == confirm_new_password:
-                            row["Passwrd"] = hash_password(new_password)
-                            write_csv(db_reader)
-                            print("Password reset successful.")
-                            break
-                        print("Passwords do not match.")
-    
+                reset_password_flow(row)
+                break
+
+
+def reset_password_flow(row):
+    while True:
+        otp = randint(10000, 99999)
+        print(otp)
+        user_otp = input("OTP: ")
+        if otp == int(user_otp):
+            new_password = get_valid_password()
+            confirm_new_password = getpass.getpass("Confirm New Password: ")
+            if new_password == confirm_new_password:
+                row["Passwrd"] = hash_password(new_password)
+                write_csv(read_csv())
+                print("Password reset successful.")
+                break
+            else:
+                print("Passwords do not match.")
+        else:
+            print("Invalid OTP. Try again.")
+
 
 def authenticate_user():
     db_reader = read_csv()
@@ -103,18 +133,19 @@ def authenticate_user():
     username = input("User Name: ")
     for row in db_reader:
         if row["UserName"] == username:
-            password = getpass.getpass("Password: ")  # Use getpass to securely input password
+            password = getpass.getpass("Password: ")
             hashed_password = hash_password(password)
             if row["Passwrd"] == hashed_password:
                 return "Credentials matched. You now have complete access to this account."
             return "Incorrect password."
-    
+
     if not any(row["UserName"] == username for row in db_reader):
         print("User does not exist.")
-        y_n = input("If you want to join our community, Y/N: ")
-        if y_n.upper() == "Y":
+        response = input("If you want to join our community, Y/N: ")
+        if response.upper() == "Y":
             return create_new_user()
         return "Have a Good Day."
+
 
 def load_page():
     try:
@@ -145,6 +176,7 @@ $. """))
                 print("Wrong input")
     except ValueError as error:
         print(f"{error}: invalid input, use int()")
+
 
 if __name__ == "__main__":
     load_page()
