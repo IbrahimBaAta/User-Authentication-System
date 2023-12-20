@@ -7,130 +7,144 @@ this code is only to check code_flexibility
 """
 
 
-from csv import DictWriter, DictReader
+import csv
 from random import randint
-import getpass
-import bcrypt
-
-CSV_FILE = "code_flexer.csv"
+import hashlib
+import getpass  # Import the getpass module for secure password input
 
 
-def read_user_data():
-    with open(CSV_FILE, "r") as db:
-        return list(DictReader(db))
+CSV_FILE = "codeFlexer.csv"
 
+def read_csv():
+    try:
+        with open(CSV_FILE, "r") as db:
+            return list(csv.DictReader(db))
+    except FileNotFoundError:
+        return []
 
-def write_user_data(data):
-    with open(CSV_FILE, "a") as db:
-        headers = DictWriter(db, fieldnames=["Username", "MobileNo", "HashedPassword"])
-        headers.writerow(data)
+def write_csv(rows):
+    with open(CSV_FILE, "w", newline="") as db:
+        headers = ["UserName", "MobileNo", "Passwrd"]
+        writer = csv.DictWriter(db, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
 
+def is_mobile_unique(mobile, rows):
+    return all(int(row["MobileNo"]) != mobile for row in rows)
+
+def is_user_unique(username, rows):
+    return all(row["UserName"] != username for row in rows)
+
+def hash_password(password):
+    # Use a secure hash function like SHA-256
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def create_new_user():
-    user_data = read_user_data()
-    username = input("Username: ")
+    db_reader = read_csv()
+    
+    username = input("Name: ")
+    if is_user_unique(username, db_reader):
+        while True:
+            try:
+                mobile_no = int(input("Mobile No: "))
+                if len(str(mobile_no)) == 10:
+                    if is_mobile_unique(mobile_no, db_reader):
+                        break
+                    else:
+                        yes_or_no = input(f"The given MobileNo {mobile_no} has been taken already.\nContinue with this number? Y/N: ")
+                        if yes_or_no.upper() == "Y":
+                            break
+                        elif yes_or_no.upper() == "N":
+                            continue
+                        else:
+                            print("Use only Y/N")
+                else:
+                    print("10-digit number needed\nDon't use country code.")
+            except ValueError:
+                print("Invalid input, use numbers.")
 
-    if all(row["Username"] != username for row in user_data):
-        mobile_no = input("Mobile No: ")
-        while not mobile_no.isdigit() or len(mobile_no) != 10:
-            print("Invalid mobile number. Please enter a 10-digit number.")
-            mobile_no = input("Mobile No: ")
-
-        if not all(int(row["MobileNo"]) != int(mobile_no) for row in user_data):
-            choice = input(f"The given Mobile No {mobile_no} is already taken. Do you want to continue? (Y/N): ")
-            if choice.upper() != "Y":
-                return "Account creation canceled."
-
-        password = getpass.getpass("Password: ")
-        confirm_password = getpass.getpass("Confirm Password: ")
-
-        if password == confirm_password:
-            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-            write_user_data({"Username": username, "MobileNo": mobile_no, "HashedPassword": hashed_password})
-            return "Account created successfully."
-        else:
-            return "Passwords do not match."
-
-    return "Username already exists."
-
+        while True:
+            password = getpass.getpass("Password: ")  # Use getpass to securely input password
+            confirm_password = getpass.getpass("Confirm Password: ")
+            if password == confirm_password:
+                hashed_password = hash_password(password)
+                db_reader.append({"UserName": username, "MobileNo": mobile_no, "Passwrd": hashed_password})
+                write_csv(db_reader)
+                return "Account created"
+            print("Passwords do not match.")
+    return "Account exists"
 
 def forgot(mobile, reset_password=False):
-    user_data = read_user_data()
+    db_reader = read_csv()
 
-    for user in user_data:
-        if int(user["MobileNo"]) == mobile:
+    for row in db_reader:
+        if int(row["MobileNo"]) == mobile:
             if not reset_password:
-                return f"Authentication ID: {user['Username']}"
+                print(f"Authentication ID: {row['UserName']}")
             else:
-                otp = str(randint(10000, 99999))
-                print(f"OTP: {otp}")
-
-                user_otp = input("Enter OTP: ")
-                if user_otp == otp:
-                    new_password = getpass.getpass("Enter new password: ")
-                    confirm_password = getpass.getpass("Confirm new password: ")
-
-                    if new_password == confirm_password:
-                        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-                        user["HashedPassword"] = hashed_password
-                        write_user_data(user_data)
-                        return "Password reset successfully."
-                    else:
-                        return "Passwords do not match."
-
-                return "Invalid OTP. Password reset failed."
-
-    return "Mobile number not found."
-
+                while True:
+                    otp = randint(10000, 99999)
+                    print(otp)
+                    user_otp = input("OTP: ")
+                    if otp == int(user_otp):
+                        new_password = input("New Password: ")
+                        confirm_new_password = input("Confirm New Password: ")
+                        if new_password == confirm_new_password:
+                            row["Passwrd"] = hash_password(new_password)
+                            write_csv(db_reader)
+                            print("Password reset successful.")
+                            break
+                        print("Passwords do not match.")
+    
 
 def authenticate_user():
-    username = input("Username: ")
-    password = getpass.getpass("Password: ")
+    db_reader = read_csv()
 
-    user_data = read_user_data()
-
-    for user in user_data:
-        if user["Username"] == username:
-            if bcrypt.checkpw(password.encode('utf-8'), user["HashedPassword"]):
-                return "Credentials matched. Access granted."
-            else:
-                return "Incorrect password."
-    else:
-        return "User does not exist."
-
+    username = input("User Name: ")
+    for row in db_reader:
+        if row["UserName"] == username:
+            password = getpass.getpass("Password: ")  # Use getpass to securely input password
+            hashed_password = hash_password(password)
+            if row["Passwrd"] == hashed_password:
+                return "Credentials matched. You now have complete access to this account."
+            return "Incorrect password."
+    
+    if not any(row["UserName"] == username for row in db_reader):
+        print("User does not exist.")
+        y_n = input("If you want to join our community, Y/N: ")
+        if y_n.upper() == "Y":
+            return create_new_user()
+        return "Have a Good Day."
 
 def load_page():
     try:
         while True:
-            print("""
-    Account Manager..
-    -------------------
-    1. Create a new account
-    2. Access your account
-    3. Forgot your authentication ID
-    4. Forgot your password
-    5. Exit""")
-            choice = input("Enter your choice (1-5): ")
-
-            if choice == "1":
+            choice = int(input("""
+Account Manager..
+-------------------
+1. Want To Join Our Community
+2. Want To Access Your Account
+3. Forgot Your Authentication ID
+4. Forgot Your Password
+5. Exit
+$. """))
+            if choice == 1:
                 print(create_new_user())
-            elif choice == "2":
+            elif choice == 2:
                 print(authenticate_user())
-            elif choice == "3":
-                mobile_no = input("Enter your mobile number: ")
-                print(forgot(int(mobile_no)))
-            elif choice == "4":
-                mobile_no = input("Enter your mobile number: ")
-                print(forgot(int(mobile_no), reset_password=True))
-            elif choice == "5":
-                print("Exiting the program. Have a good day!")
+            elif choice == 3:
+                mobile_no = int(input("Mobile No: "))
+                forgot(mobile_no)
+            elif choice == 4:
+                mobile_no = int(input("Mobile No: "))
+                forgot(mobile_no, reset_password=True)
+            elif choice == 5:
+                print("\t Have A Good Day..")
                 break
             else:
-                print("Invalid choice. Please enter a number between 1 and 5.")
-
+                print("Wrong input")
     except ValueError as error:
-        print(error, "Invalid input. Please enter a valid number.")
-
+        print(f"{error}: invalid input, use int()")
 
 if __name__ == "__main__":
     load_page()
