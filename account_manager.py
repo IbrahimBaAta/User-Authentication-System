@@ -7,7 +7,7 @@ this code is only to check code_flexibility
 """
 
 import csv
-import hashlib
+import bcrypt
 import getpass
 from random import randint
 import re
@@ -43,7 +43,8 @@ def is_user_unique(username, rows):
 
 
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    # Hash the password using bcrypt
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def create_new_user():
@@ -134,8 +135,8 @@ def authenticate_user():
     for row in db_reader:
         if row["UserName"] == username:
             password = getpass.getpass("Password: ")
-            hashed_password = hash_password(password)
-            if row["Passwrd"] == hashed_password:
+            hashed_password = row["Passwrd"].encode()
+            if bcrypt.checkpw(password.encode(), hashed_password):
                 return "Credentials matched. You now have complete access to this account."
             return "Incorrect password."
 
